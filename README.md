@@ -101,27 +101,20 @@ After the bundle is built, upload it at <https://extensions.gnome.org/upload/>.
 ## Cutting a Release
 
 Releases are tagged with semantic versions (e.g. `v1.0.1`) and published as
-GitHub releases with the bundle attached. Tag first, build second, then
-publish via `gh`:
+GitHub releases with the bundle attached. The `release.sh` script automates the
+full flow — finding the next version, tagging, building, validating, pushing,
+and creating the release with auto-generated notes:
 
 ```bash
-# 1. Tag the release on a clean main, then push the tag
-git tag -a v1.0.1 -m "Release v1.0.1"
-git push origin v1.0.1
-
-# 2. Build a bundle whose filename embeds the new tag, then validate
-./build.sh
-./test.sh
-
-# 3. Create the GitHub release with the bundle attached
-gh release create v1.0.1 \
-    quick-sound-switcher@dustin-hawkins-v1.0.1.shell-extension.zip \
-    --title "v1.0.1" \
-    --notes "Release notes here…"
-
-# 4. (Optional) Upload the same bundle to extensions.gnome.org
-xdg-open https://extensions.gnome.org/upload/
+./release.sh           # patch bump  (e.g. v1.0.0 -> v1.0.1)
+./release.sh minor     # minor bump  (e.g. v1.0.1 -> v1.1.0)
+./release.sh major     # major bump  (e.g. v1.1.0 -> v2.0.0)
 ```
+
+The script refuses to run unless the working tree is clean, the current branch
+is `main`, and `main` is in sync with `origin/main`. It prompts before pushing
+the tag and creating the release. Requires `gh` to be authenticated
+(`gh auth login`).
 
 To replace the bundle on an existing release without recreating the tag:
 
