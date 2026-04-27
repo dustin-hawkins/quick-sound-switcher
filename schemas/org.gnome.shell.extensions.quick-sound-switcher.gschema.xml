@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE schemalist PUBLIC "gschema" "https://gitlab.gnome.org/GNOME/glib/raw/master/gio/gschema.dtd">
+<schemalist>
+  <schema id="org.gnome.shell.extensions.quick-sound-switcher" path="/org/gnome/shell/extensions/quick-sound-switcher/">
+
+    <key name="hide-on-single-device" type="b">
+      <default>false</default>
+      <summary>Hide chooser when only one device is available</summary>
+    </key>
+
+    <key name="show-profiles" type="b">
+      <default>true</default>
+      <summary>Show available audio profiles for devices</summary>
+    </key>
+
+    <key name="show-input-slider" type="b">
+      <default>true</default>
+      <summary>Always show input volume slider</summary>
+    </key>
+
+    <key name="show-input-devices" type="b">
+      <default>true</default>
+      <summary>Show input device chooser</summary>
+    </key>
+
+    <key name="show-output-devices" type="b">
+      <default>true</default>
+      <summary>Show output device chooser</summary>
+    </key>
+
+    <key name="ports-settings" type="s">
+      <default>"{\"version\":3,\"ports\":[]}"</default>
+      <summary>Port visibility preferences (JSON)</summary>
+    </key>
+
+    <key name="icon-theme" type="s">
+      <default>"monochrome"</default>
+      <summary>Icon style: "colored", "monochrome", or "none"</summary>
+    </key>
+
+    <key name="enable-log" type="b">
+      <default>false</default>
+      <summary>Enable debug logging to journal</summary>
+    </key>
+
+    <key name="new-profile-identification" type="b">
+      <default>true</default>
+      <summary>Use Python script for port profile identification</summary>
+    </key>
+
+    <key name="cannot-activate-hidden-device" type="b">
+      <default>true</default>
+      <summary>Prevent activation of hidden devices</summary>
+    </key>
+
+    <key name="omit-device-origins" type="b">
+      <default>false</default>
+      <summary>Omit device origin text from display names</summary>
+    </key>
+
+    <key name="cycle-output-forward" type="as">
+      <default><![CDATA[['<Super><Alt>Page_Up']]]></default>
+      <summary>Shortcut to cycle forward through output devices</summary>
+    </key>
+
+    <key name="cycle-output-backward" type="as">
+      <default><![CDATA[['<Super><Alt>Page_Down']]]></default>
+      <summary>Shortcut to cycle backward through output devices</summary>
+    </key>
+
+    <key name="cycle-input-forward" type="as">
+      <default><![CDATA[['<Super><Alt>Home']]]></default>
+      <summary>Shortcut to cycle forward through input devices</summary>
+    </key>
+
+    <key name="cycle-input-backward" type="as">
+      <default><![CDATA[['<Super><Alt>End']]]></default>
+      <summary>Shortcut to cycle backward through input devices</summary>
+    </key>
+
+  </schema>
+</schemalist>
