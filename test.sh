@@ -11,7 +11,6 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 UUID="quick-sound-switcher@dustin-hawkins"
-BUNDLE="${UUID}.shell-extension.zip"
 
 if ! command -v shexli >/dev/null 2>&1; then
     echo "error: shexli not found in PATH (install with 'pipx install shexli')" >&2
@@ -20,6 +19,9 @@ fi
 
 # Always rebuild — keeps the test reproducible.
 ./build.sh >/dev/null
+
+VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
+BUNDLE="${UUID}-${VERSION}.shell-extension.zip"
 
 echo "Running shexli on ${BUNDLE}..."
 echo

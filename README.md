@@ -84,6 +84,12 @@ gnome-extensions pack \
     --out-dir=.
 ```
 
+The output filename embeds the current version, derived from `git describe --tags --always --dirty`:
+
+- On a clean tagged commit (e.g. `v1.0.1`): `quick-sound-switcher@dustin-hawkins-v1.0.1.shell-extension.zip`
+- Past the latest tag: `...-v1.0.1-3-gabc1234.shell-extension.zip`
+- Working tree has uncommitted changes: suffix `-dirty`
+
 To validate the produced bundle against [`shexli`](https://pypi.org/project/shexli/) (GNOME Shell extension static analysis), run:
 
 ```bash
@@ -91,6 +97,38 @@ To validate the produced bundle against [`shexli`](https://pypi.org/project/shex
 ```
 
 After the bundle is built, upload it at <https://extensions.gnome.org/upload/>.
+
+## Cutting a Release
+
+Releases are tagged with semantic versions (e.g. `v1.0.1`) and published as
+GitHub releases with the bundle attached. Tag first, build second, then
+publish via `gh`:
+
+```bash
+# 1. Tag the release on a clean main, then push the tag
+git tag -a v1.0.1 -m "Release v1.0.1"
+git push origin v1.0.1
+
+# 2. Build a bundle whose filename embeds the new tag, then validate
+./build.sh
+./test.sh
+
+# 3. Create the GitHub release with the bundle attached
+gh release create v1.0.1 \
+    quick-sound-switcher@dustin-hawkins-v1.0.1.shell-extension.zip \
+    --title "v1.0.1" \
+    --notes "Release notes here…"
+
+# 4. (Optional) Upload the same bundle to extensions.gnome.org
+xdg-open https://extensions.gnome.org/upload/
+```
+
+To replace the bundle on an existing release without recreating the tag:
+
+```bash
+gh release upload v1.0.1 \
+    quick-sound-switcher@dustin-hawkins-v1.0.1.shell-extension.zip --clobber
+```
 
 ## Configuration
 
