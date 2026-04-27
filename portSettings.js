@@ -7,6 +7,7 @@
  */
 
 import GLib from 'gi://GLib';
+import Gio from 'gi://Gio';
 
 // Settings key constants
 export const HIDE_ON_SINGLE_DEVICE = 'hide-on-single-device';
@@ -105,6 +106,56 @@ function migratePortSettings(currVersion, currSettings, settings) {
 
 let _cards = {};
 let _ports = [];
+let _refreshListeners = [];
+let _refreshInFlight = null;
+let _ctx = {extensionDir: null, settings: null};
+
+export function onCardsRefreshed(cb) {
+    _refreshListeners.push(cb);
+    return () => {
+        let i = _refreshListeners.indexOf(cb);
+        if (i >= 0)
+            _refreshListeners.splice(i, 1);
+    };
+}
+
+function _notifyRefreshed() {
+    _refreshListeners.slice().forEach(cb => {
+        try {
+            cb();
+        } catch (e) {
+            _log(`refresh listener error: ${e}`);
+        }
+    });
+}
+
+function _spawnAsync(argv, extraEnv) {
+    return new Promise((resolve, reject) => {
+        try {
+            let launcher = new Gio.SubprocessLauncher({
+                flags: Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE,
+            });
+            if (extraEnv) {
+                for (let [k, v] of extraEnv)
+                    launcher.setenv(k, v, true);
+            }
+            let proc = launcher.spawnv(argv);
+            proc.communicate_utf8_async(null, null, (p, res) => {
+                try {
+                    let [, stdout, stderr] = p.communicate_utf8_finish(res);
+                    if (p.get_successful())
+                        resolve(stdout);
+                    else
+                        reject(new Error(`exit ${p.get_exit_status()}: ${stderr}`));
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        } catch (e) {
+            reject(e);
+        }
+    });
+}
 
 export function getCard(cardIndex) {
     if (!_cards || Object.keys(_cards).length === 0)
@@ -119,15 +170,14 @@ export function getPorts(refresh) {
     return _ports;
 }
 
-export function getSinks() {
+export async function getSinks() {
     try {
-        let [, out] = GLib.spawn_command_line_sync('pactl list sinks');
-        let input = new TextDecoder().decode(out);
-        const regex = /Sink #(\d+)\n(?:.|\n)*?device\.description = "(.*?)"(?:.|\n)*?/g;
-        let matches;
+        let stdout = await _spawnAsync(['pactl', 'list', 'sinks']);
+        const re = /Sink #(\d+)\n(?:.|\n)*?device\.description = "(.*?)"(?:.|\n)*?/g;
+        let m;
         let sinks = [];
-        while ((matches = regex.exec(input)) !== null)
-            sinks.push({id: matches[1], name: matches[2]});
+        while ((m = re.exec(stdout)) !== null)
+            sinks.push({id: m[1], name: m[2]});
         return sinks;
     } catch (e) {
         _log(`ERROR getting sinks: ${e}`);
@@ -136,9 +186,20 @@ export function getSinks() {
 }
 
 export function refreshCards(extensionDir, settings) {
-    _cards = {};
-    _ports = [];
+    if (extensionDir)
+        _ctx.extensionDir = extensionDir;
+    if (settings)
+        _ctx.settings = settings;
+    if (_refreshInFlight)
+        return _refreshInFlight;
+    _refreshInFlight = _doRefresh().finally(() => {
+        _refreshInFlight = null;
+    });
+    return _refreshInFlight;
+}
 
+async function _doRefresh() {
+    let {extensionDir, settings} = _ctx;
     let usePython = settings ? settings.get_boolean(NEW_PROFILE_ID) : false;
 
     if (usePython && extensionDir) {
@@ -147,32 +208,27 @@ export function refreshCards(extensionDir, settings) {
             cmd => GLib.find_program_in_path(cmd) !== null);
         if (pythonExec) {
             try {
-                let [result, out, , exitCode] = GLib.spawn_command_line_sync(
-                    `${pythonExec} ${pyLocation}`);
-                if (result && !exitCode) {
-                    let decoded = new TextDecoder().decode(out);
-                    let obj = JSON.parse(decoded);
-                    _cards = obj.cards;
-                    _ports = obj.ports;
-                    return;
-                }
+                let stdout = await _spawnAsync([pythonExec, pyLocation]);
+                let obj = JSON.parse(stdout);
+                _cards = obj.cards;
+                _ports = obj.ports;
+                _notifyRefreshed();
+                return;
             } catch (e) {
-                _log(`Python execution failed, falling back to pactl: ${e}`);
+                _log(`Python failed, falling back to pactl: ${e}`);
             }
         }
     }
 
     // Fallback: parse pactl output
     try {
-        let env = GLib.get_environ();
-        env = GLib.environ_setenv(env, 'LANG', 'C', true);
-        let [result, out] = GLib.spawn_sync(
-            null, ['pactl', 'list', 'cards'], env,
-            GLib.SpawnFlags.SEARCH_PATH, null);
-        if (result)
-            _parseCardOutput(out);
+        let stdout = await _spawnAsync(['pactl', 'list', 'cards'], [['LANG', 'C']]);
+        let parsed = _parseCardOutput(stdout);
+        _cards = parsed.cards;
+        _ports = parsed.ports;
+        _notifyRefreshed();
     } catch (e) {
-        _log(`ERROR: pactl execution failed: ${e}`);
+        _log(`ERROR: pactl failed: ${e}`);
     }
 }
 
@@ -212,22 +268,24 @@ function _getProfilesForPort(portName, card) {
     return null;
 }
 
-function _parseCardOutput(out) {
-    let lines = new TextDecoder().decode(out).split('\n');
+function _parseCardOutput(text) {
+    let cards = {};
+    let ports = [];
+    let lines = text.split('\n');
     let cardIndex;
     let parseSection = 'CARDS';
     let port;
-    let matches;
+    let m;
 
     while (lines.length > 0) {
         let line = lines.shift();
 
-        if ((matches = /^Card\s#(\d+)$/.exec(line))) {
-            cardIndex = matches[1];
-            if (!_cards[cardIndex])
-                _cards[cardIndex] = {index: cardIndex, profiles: [], ports: []};
-        } else if ((matches = /^\t*Name:\s+(.*?)$/.exec(line)) && _cards[cardIndex]) {
-            _cards[cardIndex].name = matches[1];
+        if ((m = /^Card\s#(\d+)$/.exec(line))) {
+            cardIndex = m[1];
+            if (!cards[cardIndex])
+                cards[cardIndex] = {index: cardIndex, profiles: [], ports: []};
+        } else if ((m = /^\t*Name:\s+(.*?)$/.exec(line)) && cards[cardIndex]) {
+            cards[cardIndex].name = m[1];
             parseSection = 'CARDS';
         } else if (line.match(/^\tProperties:$/) && parseSection === 'CARDS') {
             parseSection = 'PROPS';
@@ -235,47 +293,46 @@ function _parseCardOutput(out) {
             parseSection = 'PROFILES';
         } else if (line.match(/^\t*Ports:$/)) {
             parseSection = 'PORTS';
-        } else if (_cards[cardIndex]) {
+        } else if (cards[cardIndex]) {
             switch (parseSection) {
             case 'PROPS':
-                if ((matches = /alsa\.card_name\s+=\s+"(.*?)"/.exec(line)))
-                    _cards[cardIndex].alsa_name = matches[1];
-                else if ((matches = /device\.description\s+=\s+"(.*?)"/.exec(line)))
-                    _cards[cardIndex].card_description = matches[1];
+                if ((m = /alsa\.card_name\s+=\s+"(.*?)"/.exec(line)))
+                    cards[cardIndex].alsa_name = m[1];
+                else if ((m = /device\.description\s+=\s+"(.*?)"/.exec(line)))
+                    cards[cardIndex].card_description = m[1];
                 break;
             case 'PROFILES':
-                if ((matches = /.*?((?:output|input)[^+]*?):\s(.*?)\s\(sinks:.*?(?:available:\s*(.*?))*\)/.exec(line))) {
-                    let availability = matches[3] ? matches[3] : 'yes';
-                    _cards[cardIndex].profiles.push({
-                        name: matches[1],
-                        human_name: matches[2],
+                if ((m = /.*?((?:output|input)[^+]*?):\s(.*?)\s\(sinks:.*?(?:available:\s*(.*?))*\)/.exec(line))) {
+                    let availability = m[3] ? m[3] : 'yes';
+                    cards[cardIndex].profiles.push({
+                        name: m[1],
+                        human_name: m[2],
                         available: availability === 'yes' ? 1 : 0,
                     });
                 }
                 break;
             case 'PORTS':
-                if ((matches = /\t*(.*?):\s(.*)\s\(.*?priority:/.exec(line))) {
+                if ((m = /\t*(.*?):\s(.*)\s\(.*?priority:/.exec(line))) {
                     port = {
-                        name: matches[1],
-                        human_name: matches[2],
-                        card_name: _cards[cardIndex].name,
-                        card_description: _cards[cardIndex].card_description,
+                        name: m[1],
+                        human_name: m[2],
+                        card_name: cards[cardIndex].name,
+                        card_description: cards[cardIndex].card_description,
                     };
-                    _cards[cardIndex].ports.push(port);
-                    _ports.push(port);
-                } else if (port && (matches = /\t*Part of profile\(s\):\s(.*)/.exec(line))) {
-                    port.profiles = matches[1].split(', ');
+                    cards[cardIndex].ports.push(port);
+                    ports.push(port);
+                } else if (port && (m = /\t*Part of profile\(s\):\s(.*)/.exec(line))) {
+                    port.profiles = m[1].split(', ');
                     port = null;
                 }
                 break;
             }
         }
     }
-    if (_ports) {
-        _ports.forEach(p => {
-            p.direction = p.profiles
-                .filter(pr => !pr.includes('+input:'))
-                .some(pr => pr.includes('output:')) ? 'Output' : 'Input';
-        });
-    }
+    ports.forEach(p => {
+        p.direction = (p.profiles || [])
+            .filter(pr => !pr.includes('+input:'))
+            .some(pr => pr.includes('output:')) ? 'Output' : 'Input';
+    });
+    return {cards, ports};
 }

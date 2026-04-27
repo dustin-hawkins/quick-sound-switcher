@@ -61,11 +61,10 @@ To produce the `quick-sound-switcher@dustin-hawkins.shell-extension.zip` bundle 
 The script:
 
 1. Compiles the GSettings schemas (`schemas/*.gschema.xml`).
-2. Compiles any translation `.po` files into `.mo` files under the `quick-sound-switcher` gettext domain (requires `msgfmt` from the `gettext` package — skipped with a warning if missing).
-3. Strips `__pycache__` from `utils/` so transient artifacts don't ship.
-4. Calls `gnome-extensions pack` with all extra sources the extension needs (extra JS modules, `utils/`, `icons/`, `locale/`).
+2. Strips `__pycache__` from `utils/` so transient artifacts don't ship.
+3. Calls `gnome-extensions pack` with all extra sources the extension needs (extra JS modules, `utils/`, `icons/`) and `--podir=po` so translations are compiled into `.mo` files under the `quick-sound-switcher` gettext domain inside the bundle. Raw `.po` sources are never shipped.
 
-Required tools: `gnome-extensions` (from `gnome-shell`), `glib-compile-schemas` (from `glib2`), and `gettext` for translations.
+Required tools: `gnome-extensions` (from `gnome-shell`), `glib-compile-schemas` (from `glib2`), and `gettext` (for `msgfmt`, used by `gnome-extensions pack` when compiling translations).
 
 If you prefer to invoke `gnome-extensions pack` manually, the equivalent command is:
 
@@ -81,8 +80,14 @@ gnome-extensions pack \
     --extra-source=signalManager.js \
     --extra-source=utils/ \
     --extra-source=icons/ \
-    --extra-source=locale/ \
+    --podir=po \
     --out-dir=.
+```
+
+To validate the produced bundle against [`shexli`](https://pypi.org/project/shexli/) (GNOME Shell extension static analysis), run:
+
+```bash
+./test.sh
 ```
 
 After the bundle is built, upload it at <https://extensions.gnome.org/upload/>.

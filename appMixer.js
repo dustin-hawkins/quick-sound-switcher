@@ -6,7 +6,7 @@
  */
 
 import Clutter from 'gi://Clutter';
-import GLib from 'gi://GLib';
+import Gio from 'gi://Gio';
 import GObject from 'gi://GObject';
 import Gvc from 'gi://Gvc';
 import St from 'gi://St';
@@ -85,7 +85,7 @@ class AppStreamSlider extends PopupMenu.PopupBaseMenuItem {
     }
 
     _getMaxVolume() {
-        return this._stream.get_vol_max_norm();
+        return Volume.getMixerControl().get_vol_max_norm();
     }
 
     _updateSlider() {
@@ -96,6 +96,10 @@ class AppStreamSlider extends PopupMenu.PopupBaseMenuItem {
     }
 
     destroy() {
+        if (this._sliderChangedId) {
+            this._slider.disconnect(this._sliderChangedId);
+            this._sliderChangedId = null;
+        }
         if (this._streamChangedId) {
             this._stream.disconnect(this._streamChangedId);
             this._streamChangedId = null;
@@ -108,6 +112,7 @@ const AppOutputSelector = GObject.registerClass(
 class AppOutputSelector extends PopupMenu.PopupSubMenuMenuItem {
     _init(stream, gettext) {
         super._init(gettext('Output: Default'), false);
+        this._destroyed = false;
         this._stream = stream;
         this._ = gettext;
         this._sinkInputIndex = stream.get_index();
@@ -117,22 +122,50 @@ class AppOutputSelector extends PopupMenu.PopupSubMenuMenuItem {
     }
 
     updateSinks() {
+        if (this._destroyed)
+            return;
         this.menu.removeAll();
-        let sinks = Port.getSinks();
-        for (let sink of sinks) {
-            if (sink.name === undefined)
-                continue;
-            let sinkLabel = `${sink.id} - ${sink.name}`;
-            this.menu.addAction(sinkLabel, () => {
+        Port.getSinks().then(sinks => {
+            if (this._destroyed)
+                return;
+            for (let sink of sinks) {
+                if (sink.name === undefined)
+                    continue;
+                let sinkLabel = `${sink.id} - ${sink.name}`;
+                this.menu.addAction(sinkLabel, () => this._moveSinkInput(sink));
+            }
+        }).catch(e => {
+            console.error(`SDC: Failed to load sinks: ${e}`);
+        });
+    }
+
+    _moveSinkInput(sink) {
+        try {
+            let proc = Gio.Subprocess.new(
+                ['pactl', 'move-sink-input',
+                    String(this._sinkInputIndex), String(sink.id)],
+                Gio.SubprocessFlags.NONE);
+            proc.wait_async(null, (p, res) => {
                 try {
-                    GLib.spawn_command_line_sync(
-                        `pactl move-sink-input ${this._sinkInputIndex} ${sink.id}`);
-                    this.label.text = `${this._('Output')}: ${sink.name}`;
+                    p.wait_finish(res);
+                    if (this._destroyed)
+                        return;
+                    if (p.get_successful())
+                        this.label.text = `${this._('Output')}: ${sink.name}`;
+                    else
+                        console.error(`SDC: pactl move-sink-input exited ${p.get_exit_status()}`);
                 } catch (e) {
                     console.error(`SDC: Failed to move sink input: ${e}`);
                 }
             });
+        } catch (e) {
+            console.error(`SDC: Failed to spawn pactl: ${e}`);
         }
+    }
+
+    destroy() {
+        this._destroyed = true;
+        super.destroy();
     }
 });
 

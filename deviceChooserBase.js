@@ -54,6 +54,27 @@ export class DeviceChooserBase {
             `changed::${Port.PORT_SETTINGS}`, this._resetDevices.bind(this));
         this._signalManager.addSignal(this._settings,
             `changed::${Port.OMIT_DEVICE_ORIGIN}`, this._refreshDeviceTitles.bind(this));
+
+        this._cardsRefreshedUnsub = Port.onCardsRefreshed(
+            this._onCardsRefreshed.bind(this));
+    }
+
+    _onCardsRefreshed() {
+        let control = this._getMixerControl();
+        if (control.get_state() !== Gvc.MixerControlState.READY)
+            return;
+        let ids = Array.from(this._devices.keys());
+        for (let id of ids) {
+            let device = this._devices.get(id);
+            if (!device)
+                continue;
+            let uidevice = this.lookupDeviceById(control, id);
+            if (!uidevice)
+                continue;
+            device.profiles = Port.getProfiles(control, uidevice) || [];
+            device.displayOption = Port.DISPLAY_OPTIONS.INITIAL;
+        }
+        this._emit('devicesChanged');
     }
 
     // --- Public API ---
@@ -162,6 +183,10 @@ export class DeviceChooserBase {
     }
 
     destroy() {
+        if (this._cardsRefreshedUnsub) {
+            this._cardsRefreshedUnsub();
+            this._cardsRefreshedUnsub = null;
+        }
         this._signalManager.disconnectAll();
         if (this._deviceRemovedTimeout) {
             GLib.source_remove(this._deviceRemovedTimeout);
