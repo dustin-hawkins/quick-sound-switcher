@@ -4,6 +4,12 @@ GNOME Shell extension that adds audio device selection to the Quick Settings pan
 
 Based on [Sound Input & Output Device Chooser](https://github.com/kgshank/gse-sound-output-device-chooser) by Gopi Sankar Karmegam, rewritten from scratch for GNOME 45-50 using modern ESM modules and the QuickSettings API.
 
+## Screenshots
+
+| Output Devices | Input Devices |
+|:---:|:---:|
+| ![Output device chooser](output.png) | ![Input device chooser](input.png) |
+
 ## Features
 
 - **Output Device Chooser** — Quick Settings toggle menu listing all output devices (speakers, HDMI, Bluetooth, etc.)
@@ -43,6 +49,43 @@ gnome-extensions enable quick-sound-switcher@dustin-hawkins
 ```bash
 gnome-extensions install quick-sound-switcher@dustin-hawkins.shell-extension.zip
 ```
+
+## Building a Release Bundle
+
+To produce the `quick-sound-switcher@dustin-hawkins.shell-extension.zip` bundle for upload to [extensions.gnome.org](https://extensions.gnome.org/upload/), run:
+
+```bash
+./build.sh
+```
+
+The script:
+
+1. Compiles the GSettings schemas (`schemas/*.gschema.xml`).
+2. Compiles any translation `.po` files into `.mo` files under the `quick-sound-switcher` gettext domain (requires `msgfmt` from the `gettext` package — skipped with a warning if missing).
+3. Strips `__pycache__` from `utils/` so transient artifacts don't ship.
+4. Calls `gnome-extensions pack` with all extra sources the extension needs (extra JS modules, `utils/`, `icons/`, `locale/`).
+
+Required tools: `gnome-extensions` (from `gnome-shell`), `glib-compile-schemas` (from `glib2`), and `gettext` for translations.
+
+If you prefer to invoke `gnome-extensions pack` manually, the equivalent command is:
+
+```bash
+glib-compile-schemas schemas/
+gnome-extensions pack \
+    --force \
+    --extra-source=deviceChooserBase.js \
+    --extra-source=outputDeviceChooser.js \
+    --extra-source=inputDeviceChooser.js \
+    --extra-source=appMixer.js \
+    --extra-source=portSettings.js \
+    --extra-source=signalManager.js \
+    --extra-source=utils/ \
+    --extra-source=icons/ \
+    --extra-source=locale/ \
+    --out-dir=.
+```
+
+After the bundle is built, upload it at <https://extensions.gnome.org/upload/>.
 
 ## Configuration
 
