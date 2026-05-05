@@ -4,6 +4,8 @@ GNOME Shell extension that adds audio device selection to the Quick Settings pan
 
 Based on [Sound Input & Output Device Chooser](https://github.com/kgshank/gse-sound-output-device-chooser) by Gopi Sankar Karmegam, rewritten from scratch for GNOME 45-50 using modern ESM modules and the QuickSettings API.
 
+Now installable via the [Gnome Extensions website.](https://extensions.gnome.org/extension/9788/quick-sound-switcher/)
+
 ## Screenshots
 
 | Output Devices | Input Devices |
